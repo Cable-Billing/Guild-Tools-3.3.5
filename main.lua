@@ -1,37 +1,23 @@
--- GuildTools 3.3.5 - Core (clean rebuild: no revert, no offline queue, UI + prune)
-local ADDON_NAME = ...
-
-GuildTools335 = GuildTools335 or {}
-GuildTools335.version = "0.3.0"
-
--- SavedVariables used: GuildTools335DB
-
 local function Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff96[GT]|r "..tostring(msg))
 end
 
--- ==============================
--- Initialize SavedVariables
--- ==============================
-local fInit = CreateFrame("Frame")
-fInit:RegisterEvent("ADDON_LOADED")
-fInit:SetScript("OnEvent", function(self, event, addon)
-    if addon ~= "GuildTools335" then return end
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:SetScript("OnEvent", function(self, event, addon)
+    if addon == "Guild-Tools" then
+        GuildTools_Config = GuildTools335DB or GuildTools_Config or {}
+        GuildTools_Config.rankRules = GuildTools_Config.rankRules or {}
+        GuildTools_Config.rankRules["Established"] = GuildTools_Config.rankRules["Established"] or 0
+        GuildTools_Config.rankRules["Member"]      = GuildTools_Config.rankRules["Member"] or 0
+        GuildTools_Config.altLinks = GuildTools_Config.altLinks or {} -- alt -> main
+        GuildTools_Config.uiCollapsed = GuildTools_Config.uiCollapsed or {} -- ui collapsed mains
 
-    GuildTools335DB = GuildTools335DB or {}
-    GuildTools335DB.rankRules = GuildTools335DB.rankRules or {}
-    GuildTools335DB.rankRules["Established"] = GuildTools335DB.rankRules["Established"] or 0
-    GuildTools335DB.rankRules["Member"]      = GuildTools335DB.rankRules["Member"] or 0
-
-    GuildTools335DB.altLinks = GuildTools335DB.altLinks or {}    -- alt -> main
-    GuildTools335DB.uiCollapsed = GuildTools335DB.uiCollapsed or {} -- ui collapsed mains
-
-    Print("GuildTools335 loaded. Type /gt for help.")
+        if IsInGuild() then GuildRoster() end
+        Print(("Loaded v%s. Type /gt for help."):format("0.4.0"))
+    end
 end)
 
--- ==============================
--- Guild utility helpers
--- ==============================
 local function CanEditOfficerNote()
     if not IsInGuild() then return false end
     return CanGuildPromote() or CanGuildDemote()
@@ -72,7 +58,7 @@ end
 
 local function GetMainName(name)
     if not name then return nil end
-    return (GuildTools335DB.altLinks and GuildTools335DB.altLinks[name]) or name
+    return (GuildTools_Config.altLinks and GuildTools_Config.altLinks[name]) or name
 end
 
 local function ParseTokens(note)
@@ -144,14 +130,10 @@ local function SetOfficerMainToken(index, onote, mainName)
     SetOfficerNote(index, onote)
 end
 
--- ==============================
--- Alt rank calculation helper (NEW)
--- ==============================
 local function ComputeAltTargetForMain(mainRankIndex)
-    local rules = GuildTools335DB and GuildTools335DB.rankRules or {}
-    local established = tonumber(rules["Established"]) or 7
+    local established = tonumber(GuildTools_Config.rankRules["Established"]) or 7
     if established == 0 then established = 7 end
-    local member = tonumber(rules["Member"]) or 8
+    local member = tonumber(GuildTools_Config.rankRules["Member"]) or 8
     if member == 0 then member = 8 end
 
     mainRankIndex = tonumber(mainRankIndex) or member
@@ -174,9 +156,6 @@ local function ComputeAltTargetForMain(mainRankIndex)
     return member
 end
 
--- ==============================
--- Link / unlink
--- ==============================
 local function UpdateMainAltLink(altName, mainName)
     if not EnsureGuildRoster() then return end
     if not CanEditOfficerNote() then
@@ -191,7 +170,7 @@ local function UpdateMainAltLink(altName, mainName)
 
     local _, onote = GetNotes(altIndex)
     SetOfficerMainToken(altIndex, onote, mainFull)
-    GuildTools335DB.altLinks[altFull] = mainFull
+    GuildTools_Config.altLinks[altFull] = mainFull
 
     local _, _, mainRankIndex = GetGuildRosterInfo(mainIndex)
     local desiredAltRank = ComputeAltTargetForMain(mainRankIndex)
@@ -215,13 +194,10 @@ local function Unlink(name)
     local _, onote = GetNotes(idx)
     onote = (onote or ""):gsub("%[MAIN:[^%]]+%]", "")
     SetOfficerNote(idx, onote)
-    GuildTools335DB.altLinks[fullname] = nil
+    GuildTools_Config.altLinks[fullname] = nil
     Print(("Unlinked %s"):format(fullname))
 end
 
--- ==============================
--- Kick group
--- ==============================
 local function KickGroup(name)
     if not EnsureGuildRoster() then return end
     local groups, byName = BuildGroups()
@@ -235,9 +211,6 @@ local function KickGroup(name)
     Print(("Kicked group: %s (includes %d alts)"):format(g.main, #g.alts))
 end
 
--- ==============================
--- Promote group with alt rules (uses helper)
--- ==============================
 local function PromoteGroupWithAltRules(groupTable, targetRank)
     if not EnsureGuildRoster() then return end
     if not groupTable or #groupTable == 0 then return end
@@ -259,7 +232,7 @@ local function PromoteGroupWithAltRules(groupTable, targetRank)
                 Print(("%s is offline or not found; main rank left unchanged."):format(tostring(main)))
             end
 
-            for alt, linkedMain in pairs(GuildTools335DB.altLinks or {}) do
+            for alt, linkedMain in pairs(GuildTools_Config.altLinks or {}) do
                 if linkedMain == main and alt ~= main then
                     local desiredAltRank = ComputeAltTargetForMain(targetRank)
 
@@ -284,28 +257,13 @@ local function PromoteGroupWithAltRules(groupTable, targetRank)
     end
 end
 
--- ==============================
--- Show queued (removed)
--- ==============================
-local function ShowQueuedPromotions()
-    Print("Offline queue removed in this build. No queued promotions are stored.")
-end
-
--- ==============================
--- Show ranks
--- ==============================
 local function ShowRankRules()
-    local r = GuildTools335DB.rankRules or {}
+    local r = GuildTools_Config.rankRules or {}
     Print(("Rank rules: Established=%s, Member=%s"):format(tostring(r.Established or "nil"), tostring(r.Member or "nil")))
 end
 
 -- ==============================
--- UI, prune, etc (unchanged)
--- ==============================
--- [UI code remains unchanged from your version]
-
--- ==============================
--- Slash commands handler (unchanged except using new funcs)
+-- Slash commands handler
 -- ==============================
 SLASH_GUILDTOOLS1 = "/gt"
 SlashCmdList["GUILDTOOLS"] = function(msg)
@@ -346,48 +304,34 @@ SlashCmdList["GUILDTOOLS"] = function(msg)
         local k = args[2]
         local v = tonumber(args[3])
         if not v then Print("Invalid rank index."); return end
-        GuildTools335DB.rankRules = GuildTools335DB.rankRules or {}
-        GuildTools335DB.rankRules[k] = v
+        GuildTools_Config.rankRules = GuildTools_Config.rankRules or {}
+        GuildTools_Config.rankRules[k] = v
         Print(("Set rank rule %s = %d"):format(k, v))
     elseif cmd == "showranks" then
         ShowRankRules()
-elseif cmd == "ui" then
-    if CreateUI and type(CreateUI) == "function" then
-        CreateUI()
-    else
-        Print("UI module not loaded correctly. Check UI.lua.")
+    elseif cmd == "ui" then
+        if CreateUI and type(CreateUI) == "function" then
+            CreateUI()
+        else
+            Print("UI module not loaded correctly. Check UI.lua.")
+        end
+    elseif cmd == "help" or cmd == "" then
+        Print("GuildTools 3.3.5 commands:")
+        Print("/gt link <alt> <main>")
+        Print("/gt unlink <name>")
+        Print("/gt show <name>")
+        Print("/gt kickgroup <name>")
+        Print("/gt promotegroup <name> <rankIndex>")
+        Print("/gt setrank <Established|Member> <index>")
+        Print("/gt showranks")
+        Print("/gt ui - open compact roster + prune")
+        else
+            Print("Unknown /gt command. Type /gt help for commands.")
+        end
     end
 
-elseif cmd == "help" or cmd == "" then
-    Print("GuildTools 3.3.5 commands:")
-    Print("/gt link <alt> <main>")
-    Print("/gt unlink <name>")
-    Print("/gt show <name>")
-    Print("/gt kickgroup <name>")
-    Print("/gt promotegroup <name> <rankIndex>")
-    Print("/gt setrank <Established|Member> <index>")
-    Print("/gt showranks")
-    Print("/gt ui - open compact roster + prune")
-    else
-        Print("Unknown /gt command. Type /gt help for commands.")
-    end
-end
-
--- ==============================
--- Hook roster update
--- ==============================
-local fRoster = CreateFrame("Frame")
-fRoster:RegisterEvent("GUILD_ROSTER_UPDATE")
-fRoster:SetScript("OnEvent", function()
+local rosterFrame = CreateFrame("Frame")
+rosterFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
+rosterFrame:SetScript("OnEvent", function()
     if UI and UI.frame and UI.frame:IsShown() and UI.Rebuild then UI:Rebuild() end
-end)
-
--- ==============================
--- Player login
--- ==============================
-local fLogin = CreateFrame("Frame")
-fLogin:RegisterEvent("PLAYER_LOGIN")
-fLogin:SetScript("OnEvent", function()
-    if IsInGuild() then GuildRoster() end
-    Print(("Loaded v%s. Type /gt for help."):format(GuildTools335.version))
 end)

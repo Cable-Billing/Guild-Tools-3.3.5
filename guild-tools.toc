@@ -1,10 +1,9 @@
 ## Interface: 30300
-## Title: Guild Tools
+## Title: Guild Tools 3.3.5
 ## Notes: Simple officer tools for managing mains/alts, kicks, promotions, and basic rules.
 ## Author: Arcana
-## Version: 0.3.0
-## SavedVariables: GuildTools335DB
+## Version: 0.4.0
+## SavedVariables: GuildTools335DB, GuildTools_Config
 
-init.lua
-core.lua
+main.lua
 ui.lua
