@@ -6,7 +6,7 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, addon)
     if addon == "Guild-Tools" then
-        GuildTools_Config = GuildTools335DB or GuildTools_Config or {}
+        GuildTools_Config = GuildTools_Config or {}
         GuildTools_Config.rankRules = GuildTools_Config.rankRules or {}
         GuildTools_Config.rankRules["Established"] = GuildTools_Config.rankRules["Established"] or 0
         GuildTools_Config.rankRules["Member"]      = GuildTools_Config.rankRules["Member"] or 0
@@ -17,6 +17,9 @@ initFrame:SetScript("OnEvent", function(self, event, addon)
         Print(("Loaded v%s. Type /gt for help."):format("0.4.0"))
     end
 end)
+
+local GuildToolsThrottleFrame = CreateFrame("Frame")
+GuildToolsThrottleFrame:Hide()
 
 local function CanEditOfficerNote()
     if not IsInGuild() then return false end
@@ -262,6 +265,108 @@ local function ShowRankRules()
     Print(("Rank rules: Established=%s, Member=%s"):format(tostring(r.Established or "nil"), tostring(r.Member or "nil")))
 end
 
+local updateQueue = {}
+local updatingNotes = false
+local updateInterval = 0.3 -- seconds between updates
+local elapsed = 0
+
+local function ProcessNextUpdate(self, delta)
+    if not updatingNotes then
+        GuildToolsThrottleFrame:SetScript("OnUpdate", nil)
+        GuildToolsThrottleFrame:Hide()
+        return
+    end
+
+    elapsed = elapsed + delta
+    if elapsed < updateInterval then return end
+    elapsed = 0
+
+    -- Get next queued update
+    local entry = table.remove(updateQueue, 1)
+    if not entry then
+        updatingNotes = false
+        Print("Finished adding notes to all queued members!")
+        GuildToolsThrottleFrame:SetScript("OnUpdate", nil)
+        GuildToolsThrottleFrame:Hide()
+        GuildRoster()
+        return
+    end
+
+    -- Apply note update safely
+    local idx, isOfficer, note = entry.idx, entry.isOfficer, entry.note
+    if idx then
+        local publicNote, officerNote = GetNotes(idx)
+        if isOfficer then
+            officerNote = note .. (officerNote ~= "" and (" " .. officerNote) or "")
+            SetOfficerNote(idx, officerNote)
+        else
+            publicNote = note .. (publicNote ~= "" and (" " .. publicNote) or "")
+            GuildRosterSetPublicNote(idx, publicNote)
+        end
+    end
+
+    Print(("Updated %s (%d remaining)..."):format(entry.name, #updateQueue))
+end
+
+local function StartProcessingUpdates()
+    if updatingNotes then return end
+    updatingNotes = true
+    elapsed = 0
+    GuildToolsThrottleFrame:SetScript("OnUpdate", ProcessNextUpdate)
+    GuildToolsThrottleFrame:Show()
+end
+
+local function AddNoteToGroupOrAll(noteType, name, note)
+    if not EnsureGuildRoster() then return end
+
+    local isOfficer = string.lower(noteType) == "officer"
+    local isPublic = string.lower(noteType) == "public"
+    if not (isOfficer or isPublic) then
+        Print("Invalid note type. Use 'Officer' or 'Public'.")
+        return
+    end
+
+    local groups, byName = BuildGroups()
+    local nameLower = string.lower(name)
+    local targets = {}
+
+    -- Determine targets
+    if nameLower == "all" then
+        for i = 1, GetNumGuildMembers() do
+            local fullName = GetGuildRosterInfo(i)
+            if fullName then table.insert(targets, fullName) end
+        end
+    else
+        local main = byName[nameLower] or name
+        local g = groups[main]
+        if not g then
+            Print("No group found for "..tostring(name))
+            return
+        end
+        table.insert(targets, g.main)
+        for _, alt in ipairs(g.alts) do
+            table.insert(targets, alt)
+        end
+    end
+
+    -- Queue updates instead of applying immediately
+    wipe(updateQueue)
+    for _, memberName in ipairs(targets) do
+        local idx = FindMemberIndexByName(memberName)
+        if idx then
+            table.insert(updateQueue, {
+                idx = idx,
+                isOfficer = isOfficer,
+                note = note,
+                name = memberName,
+            })
+        end
+    end
+
+    Print(("Queued %d note updates. Processing..."):format(#updateQueue))
+    StartProcessingUpdates()
+end
+
 -- ==============================
 -- Slash commands handler
 -- ==============================
@@ -324,10 +429,15 @@ SlashCmdList["GUILDTOOLS"] = function(msg)
         Print("/gt promotegroup <name> <rankIndex>")
         Print("/gt setrank <Established|Member> <index>")
         Print("/gt showranks")
+        Print("/gt addnote <Officer|Public> <name|all> <note>")
         Print("/gt ui - open compact roster + prune")
-        else
-            Print("Unknown /gt command. Type /gt help for commands.")
-        end
+    elseif cmd == "addnote" and args[2] and args[3] and args[4] then
+        local noteType = args[2]
+        local name = args[3]
+        local note = table.concat(args, " ", 4) -- everything after 3rd arg
+        AddNoteToGroupOrAll(noteType, name, note)
+    else
+        Print("Unknown /gt command. Type /gt help for commands.")
     end
 
 local rosterFrame = CreateFrame("Frame")

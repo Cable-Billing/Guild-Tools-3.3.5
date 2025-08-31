@@ -3,7 +3,7 @@
 ## Notes: Simple officer tools for managing mains/alts, kicks, promotions, and basic rules.
 ## Author: Arcana
 ## Version: 0.4.0
-## SavedVariables: GuildTools335DB, GuildTools_Config
+## SavedVariables: GuildTools_Config
 
 main.lua
 ui.lua
