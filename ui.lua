@@ -51,7 +51,9 @@ local function ensureDB()
     GuildTools335DB.uiCollapsed = GuildTools335DB.uiCollapsed or {} -- [main]=true/false (true = collapsed)
     if GuildTools335DB.uiPruneDays == nil then GuildTools335DB.uiPruneDays = 0 end
     filterDays = GuildTools335DB.uiPruneDays or 0
-    GuildTools335DB.altLinks = GuildTools335DB.altLinks or {}
+    -- Use the same altLinks from main config
+    if not GuildTools_Config then GuildTools_Config = {} end
+    if not GuildTools_Config.altLinks then GuildTools_Config.altLinks = {} end
 end
 
 -- compute offline days from GetGuildRosterLastOnline (years, months, days, hours)
@@ -68,20 +70,7 @@ local function offlineDaysFromIndex(i, onlineFlag)
     return days
 end
 
--- parse officer/public notes to find MAIN token [MAIN:Name] or loose Main:Name
-local function parseMainFromNotes(publicNote, officerNote)
-    local function tryParse(s)
-        if not s or s == "" then return nil end
-        -- strict bracket token (case-insensitive)
-        local token = string.match(s, "%[MAIN:([%w%-%_]+)%]") or string.match(s, "%[main:([%w%-%_]+)%]")
-        if token and token ~= "" then return striprealm(token) end
-        -- loose patterns
-        local loose = string.match(s, "[Mm][Aa][Ii][Nn]%s*[:=]%s*([%w%-%_]+)")
-        if loose and loose ~= "" then return striprealm(loose) end
-        return nil
-    end
-    return tryParse(officerNote) or tryParse(publicNote)
-end
+
 
 -- clear created UI rows
 local function clearRows()
@@ -110,13 +99,10 @@ local function buildMembers()
 
             local mainName = short -- default
             -- check stored altLinks mapping (fullName or short)
-            if GuildTools335DB and GuildTools335DB.altLinks then
-                local link = GuildTools335DB.altLinks[fullName] or GuildTools335DB.altLinks[short]
+            if GuildTools_Config and GuildTools_Config.altLinks then
+                local link = GuildTools_Config.altLinks[fullName] or GuildTools_Config.altLinks[short]
                 if link and link ~= "" then mainName = striprealm(link) end
             end
-            -- check notes (officerNote preferred)
-            local nMain = parseMainFromNotes(publicNote, officerNote)
-            if nMain and nMain ~= "" then mainName = nMain end
 
             members[short] = {
                 short = short,

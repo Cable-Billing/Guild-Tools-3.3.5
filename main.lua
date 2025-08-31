@@ -2,6 +2,13 @@ local function Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff96[GT]|r "..tostring(msg))
 end
 
+-- Helper function to clear tables
+local function wipe(t)
+    for k in pairs(t) do
+        t[k] = nil
+    end
+end
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, addon)
@@ -20,11 +27,6 @@ end)
 
 local GuildToolsThrottleFrame = CreateFrame("Frame")
 GuildToolsThrottleFrame:Hide()
-
-local function CanEditOfficerNote()
-    if not IsInGuild() then return false end
-    return CanGuildPromote() or CanGuildDemote()
-end
 
 local function EnsureGuildRoster()
     if not IsInGuild() then
@@ -64,27 +66,6 @@ local function GetMainName(name)
     return (GuildTools_Config.altLinks and GuildTools_Config.altLinks[name]) or name
 end
 
-local function ParseTokens(note)
-    local t = {}
-    if not note or note == "" then return t end
-    for key, val in string.gmatch(note, "%[(%u+):([%w,%-_]+)%]") do
-        t[key] = val
-    end
-    return t
-end
-
-local function GetNotes(index)
-    if not index then return "", "" end
-    local _, _, _, _, _, _, note, officernote = GetGuildRosterInfo(index)
-    return note or "", officernote or ""
-end
-
-local function SetOfficerNote(index, text)
-    if index and text then
-        GuildRosterSetOfficerNote(index, text)
-    end
-end
-
 local function FindMemberIndexByName(searchName)
     if not searchName then return nil end
     local n = GetNumGuildMembers()
@@ -105,32 +86,35 @@ local function BuildGroups()
     local n = GetNumGuildMembers()
     local groups = {}
     local byName = {}
+    
+    -- First pass: create groups for all members
     for i = 1, n do
         local fullname = GetGuildRosterInfo(i) or ("Unknown"..i)
         local short = string.match(fullname, "^[^-]+") or fullname
-        local note, onote = GetNotes(i)
-        local tokens = ParseTokens(onote)
-        if next(tokens) == nil then
-            tokens = ParseTokens(note)
-        end
-        local main = tokens["MAIN"] or short
-        main = string.match(main, "^[^-]+") or main
-        groups[main] = groups[main] or { main = main, alts = {} }
-        if short ~= main then
-            table.insert(groups[main].alts, short)
-        end
-        byName[string.lower(short)] = main
+        groups[short] = groups[short] or { main = short, alts = {} }
+        byName[string.lower(short)] = short
     end
+    
+    -- Second pass: organize alts based on altLinks
+    for altName, mainName in pairs(GuildTools_Config.altLinks or {}) do
+        local altShort = string.match(altName, "^[^-]+") or altName
+        local mainShort = string.match(mainName, "^[^-]+") or mainName
+        
+        -- If main exists in groups, add alt to main's group
+        if groups[mainShort] then
+            if altShort ~= mainShort then
+                table.insert(groups[mainShort].alts, altShort)
+                -- Remove alt from its own group if it was created
+                if groups[altShort] and altShort ~= mainShort then
+                    groups[altShort] = nil
+                end
+                -- Update byName to point to main
+                byName[string.lower(altShort)] = mainShort
+            end
+        end
+    end
+    
     return groups, byName
-end
-
-local function SetOfficerMainToken(index, onote, mainName)
-    if not index or not mainName then return end
-    onote = onote or ""
-    onote = onote:gsub("%[MAIN:[^%]]+%]", "")
-    if onote ~= "" then onote = onote .. " " end
-    onote = onote .. "[MAIN:"..(string.match(mainName, "^[^-]+") or mainName).."]"
-    SetOfficerNote(index, onote)
 end
 
 local function ComputeAltTargetForMain(mainRankIndex)
@@ -161,7 +145,7 @@ end
 
 local function UpdateMainAltLink(altName, mainName)
     if not EnsureGuildRoster() then return end
-    if not CanEditOfficerNote() then
+    if not (CanGuildPromote() or CanGuildDemote()) then
         Print("Officer permissions required to link mains/alts.")
         return
     end
@@ -171,8 +155,7 @@ local function UpdateMainAltLink(altName, mainName)
     if not altIndex then Print("Alt not found: "..tostring(altName)); return end
     if not mainIndex then Print("Main not found: "..tostring(mainName)); return end
 
-    local _, onote = GetNotes(altIndex)
-    SetOfficerMainToken(altIndex, onote, mainFull)
+    -- Only update altLinks, no more guild notes
     GuildTools_Config.altLinks[altFull] = mainFull
 
     local _, _, mainRankIndex = GetGuildRosterInfo(mainIndex)
@@ -188,15 +171,14 @@ end
 
 local function Unlink(name)
     if not EnsureGuildRoster() then return end
-    if not CanEditOfficerNote() then
+    if not (CanGuildPromote() or CanGuildDemote()) then
         Print("Officer permissions required to unlink.")
         return
     end
     local idx, fullname = FindMemberIndexByName(name)
     if not idx then Print("Name not found: "..tostring(name)); return end
-    local _, onote = GetNotes(idx)
-    onote = (onote or ""):gsub("%[MAIN:[^%]]+%]", "")
-    SetOfficerNote(idx, onote)
+    
+    -- Only remove from altLinks, no more guild notes
     GuildTools_Config.altLinks[fullname] = nil
     Print(("Unlinked %s"):format(fullname))
 end
@@ -295,10 +277,10 @@ local function ProcessNextUpdate(self, delta)
     -- Apply note update safely
     local idx, isOfficer, note = entry.idx, entry.isOfficer, entry.note
     if idx then
-        local publicNote, officerNote = GetNotes(idx)
+        local _, _, _, _, _, _, publicNote, officerNote = GetGuildRosterInfo(idx)
         if isOfficer then
             officerNote = note .. (officerNote ~= "" and (" " .. officerNote) or "")
-            SetOfficerNote(idx, officerNote)
+            GuildRosterSetOfficerNote(idx, officerNote)
         else
             publicNote = note .. (publicNote ~= "" and (" " .. publicNote) or "")
             GuildRosterSetPublicNote(idx, publicNote)
@@ -366,6 +348,7 @@ local function AddNoteToGroupOrAll(noteType, name, note)
     Print(("Queued %d note updates. Processing..."):format(#updateQueue))
     StartProcessingUpdates()
 end
+
 
 -- ==============================
 -- Slash commands handler
