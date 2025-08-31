@@ -439,6 +439,7 @@ SlashCmdList["GUILDTOOLS"] = function(msg)
     else
         Print("Unknown /gt command. Type /gt help for commands.")
     end
+end
 
 local rosterFrame = CreateFrame("Frame")
 rosterFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
