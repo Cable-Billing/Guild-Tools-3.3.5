@@ -351,6 +351,128 @@ end
 
 
 -- ==============================
+-- Export/Import functionality
+-- ==============================
+local function ExportAltLinks(targetName)
+    if not targetName then
+        Print("Usage: /gt export <character_name>")
+        return
+    end
+    
+    -- Check if we have altLinks data to export
+    if not GuildTools_Config.altLinks or not next(GuildTools_Config.altLinks) then
+        Print("No alt links data to export.")
+        return
+    end
+    
+    -- Convert to JSON-like string (simple serialization for WoW 3.3.5)
+    local baseHeader = "GT_EXPORT"
+    local maxLength = 255
+    local currentPart = baseHeader
+    local partNumber = 1
+    local totalParts = 1
+    
+    if GuildTools_Config.altLinks then
+        for alt, main in pairs(GuildTools_Config.altLinks) do
+            local pairString = " " .. alt .. " " .. main
+            
+            -- Check if adding this pair would exceed the limit
+            if #currentPart + #pairString > maxLength then
+                -- Send current part
+                SendChatMessage(currentPart, "WHISPER", nil, targetName)
+                Print(("Exported part %d/%d to %s"):format(partNumber, totalParts, targetName))
+                
+                -- Start new part
+                partNumber = partNumber + 1
+                currentPart = baseHeader .. pairString
+            else
+                -- Add to current part
+                currentPart = currentPart .. pairString
+            end
+        end
+    end
+    
+    -- Send final part
+    if #currentPart > #baseHeader then
+        SendChatMessage(currentPart, "WHISPER", nil, targetName)
+        Print(("Exported part %d/%d to %s"):format(partNumber, partNumber, targetName))
+    end
+    
+    Print(("Exported alt links data to %s in %d parts"):format(targetName, partNumber))
+end
+
+-- Store partial import data for multi-part exports
+local pendingImports = {}
+
+local function ImportAltLinks(sender, message)
+    -- Check if this is an export message from our addon
+    if not message or not string.find(message, "^GT_EXPORT ") then
+        return
+    end
+    
+    -- Parse the export data
+    local parts = {}
+    for part in string.gmatch(message, "%S+") do
+        table.insert(parts, part)
+    end
+    
+    if #parts < 2 then return end -- Need at least "GT_EXPORT" and one pair
+    
+    if #parts > 1 then
+        -- Initialize or get existing pending import for this sender
+        if not pendingImports[sender] then
+            pendingImports[sender] = {
+                altLinks = {},
+                receivedParts = 0
+            }
+        end
+        
+        local pending = pendingImports[sender]
+        pending.receivedParts = pending.receivedParts + 1
+        
+        -- Parse alt main pairs (every 2 parts starting from index 2)
+        for i = 2, #parts - 1, 2 do
+            local alt = parts[i]
+            local main = parts[i + 1]
+            if alt and main then
+                pending.altLinks[alt] = main
+            end
+        end
+        
+        -- Process the accumulated data by merging with existing altLinks
+        local newLinks = 0
+        local updatedLinks = 0
+        
+        for alt, main in pairs(pending.altLinks) do
+            if not GuildTools_Config.altLinks[alt] then
+                -- This is a new alt link
+                newLinks = newLinks + 1
+            elseif GuildTools_Config.altLinks[alt] ~= main then
+                -- This alt link was updated
+                updatedLinks = updatedLinks + 1
+            end
+            -- Merge the data (add new ones, update existing ones)
+            GuildTools_Config.altLinks[alt] = main
+        end
+        
+        local totalLinks = 0
+        for _ in pairs(GuildTools_Config.altLinks) do totalLinks = totalLinks + 1 end
+        
+        Print(("Imported alt links from %s: %d new, %d updated, %d total"):format(sender, newLinks, updatedLinks, totalLinks))
+        
+        -- Clean up pending import
+        pendingImports[sender] = nil
+        
+        -- Refresh guild roster to apply changes
+        if IsInGuild() then
+            GuildRoster()
+        end
+    else
+        Print(("Received export data from %s but no alt links found"):format(sender))
+    end
+end
+
+-- ==============================
 -- Slash commands handler
 -- ==============================
 SLASH_GUILDTOOLS1 = "/gt"
@@ -413,7 +535,7 @@ SlashCmdList["GUILDTOOLS"] = function(msg)
         Print("/gt setrank <Established|Member> <index>")
         Print("/gt showranks")
         Print("/gt addnote <Officer|Public> <name|all> <note>")
-        Print("/gt export <character_name> - export alt links to another character")
+        Print("/gt export <character_name>")
         Print("/gt ui - open compact roster + prune")
     elseif cmd == "addnote" and args[2] and args[3] and args[4] then
         local noteType = args[2]
@@ -424,81 +546,6 @@ SlashCmdList["GUILDTOOLS"] = function(msg)
         ExportAltLinks(args[2])
     else
         Print("Unknown /gt command. Type /gt help for commands.")
-    end
-end
-
--- ==============================
--- Export/Import functionality
--- ==============================
-local function ExportAltLinks(targetName)
-    if not targetName then
-        Print("Usage: /gt export <character_name>")
-        return
-    end
-    
-    -- Check if we have altLinks data to export
-    if not GuildTools_Config.altLinks or not next(GuildTools_Config.altLinks) then
-        Print("No alt links data to export.")
-        return
-    end
-    
-    -- Create export data with identifier
-    local exportData = {
-        type = "GT_EXPORT",
-        version = "3.3.5",
-        altLinks = GuildTools_Config.altLinks,
-        timestamp = time()
-    }
-    
-    -- Convert to JSON-like string (simple serialization for WoW 3.3.5)
-    local serialized = "GT_EXPORT:" .. (GuildTools_Config.altLinks and "1" or "0")
-    if GuildTools_Config.altLinks then
-        for alt, main in pairs(GuildTools_Config.altLinks) do
-            serialized = serialized .. "|" .. alt .. ":" .. main
-        end
-    end
-    
-    -- Send whisper
-    SendChatMessage(serialized, "WHISPER", nil, targetName)
-    Print(("Exported alt links data to %s"):format(targetName))
-end
-
-local function ImportAltLinks(sender, message)
-    -- Check if this is an export message from our addon
-    if not message or not string.find(message, "^GT_EXPORT:") then
-        return
-    end
-    
-    -- Parse the export data
-    local parts = {}
-    for part in string.gmatch(message, "[^|]+") do
-        table.insert(parts, part)
-    end
-    
-    if #parts < 1 then return end
-    
-    local hasData = parts[1]:sub(11) == "1" -- Remove "GT_EXPORT:" prefix
-    
-    if hasData and #parts > 1 then
-        -- Clear existing altLinks
-        GuildTools_Config.altLinks = {}
-        
-        -- Parse alt:main pairs
-        for i = 2, #parts do
-            local alt, main = string.match(parts[i], "([^:]+):(.+)")
-            if alt and main then
-                GuildTools_Config.altLinks[alt] = main
-            end
-        end
-        
-        Print(("Imported alt links data from %s (%d links)"):format(sender, #GuildTools_Config.altLinks))
-        
-        -- Refresh guild roster to apply changes
-        if IsInGuild() then
-            GuildRoster()
-        end
-    else
-        Print(("Received export data from %s but no alt links found"):format(sender))
     end
 end
 
