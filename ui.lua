@@ -29,6 +29,7 @@ local roster = {}          -- mainName -> { class, days, online, alts = {...} }
 local sortedMains = {}     -- array of { main = name, data = roster[name] } sorted by days
 local filterDays = 0       -- display filter (>= days). persisted in GuildTools335DB.uiPruneDays
 local highlightTarget = nil -- name of main to highlight (string), cleared on refresh
+local exportFrame           -- lazy-created export window
 
 -- -------------------------
 -- Helpers
@@ -412,6 +413,12 @@ function CreateUI()
         refreshBtn:SetPoint("LEFT", searchBtn, "RIGHT", 8, 0)
         refreshBtn:SetText("Update Roster")
 
+        -- Export Names button (opens copy window)
+        local exportBtn = CreateFrame("Button", nil, uiFrame, "UIPanelButtonTemplate")
+        exportBtn:SetSize(120, 20)
+        exportBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 8, 0)
+        exportBtn:SetText("Export Names")
+
         -- ScrollFrame and content child
         scrollFrame = CreateFrame("ScrollFrame", "GuildTools335ScrollFrame", uiFrame, "UIPanelScrollFrameTemplate")
         scrollFrame:SetPoint("TOPLEFT", 14, -82)
@@ -445,6 +452,10 @@ function CreateUI()
             GuildRoster()
             buildRoster()
             drawRoster()
+        end)
+
+        exportBtn:SetScript("OnClick", function()
+            GuildTools335_ShowExportNames()
         end)
 
         searchBtn:SetScript("OnClick", function()
@@ -546,3 +557,92 @@ function CreateUI()
 end
 
 -- End of UI.lua
+
+-- ==========================
+-- Export Names window (clipboard helper)
+-- ==========================
+function GuildTools335_ShowExportNames()
+    if not IsInGuild() then return end
+    GuildRoster()
+
+    -- build list of guild member short names based on current filter
+    local names = {}
+    -- refresh member cache so days values are current
+    buildMembers()
+    if filterDays and filterDays > 0 then
+        for short, info in pairs(members) do
+            if (info.days or 0) >= filterDays then
+                names[#names+1] = short
+            end
+        end
+    else
+        for short, _ in pairs(members) do
+            names[#names+1] = short
+        end
+    end
+    table.sort(names, function(a,b) return string.lower(a) < string.lower(b) end)
+    local text = table.concat(names, "\n")
+
+    -- lazy create export frame
+    if not exportFrame then
+        exportFrame = CreateFrame("Frame", "GuildTools335_ExportFrame", UIParent)
+        exportFrame:SetSize(520, 360)
+        exportFrame:SetPoint("CENTER")
+        exportFrame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 10, right = 10, top = 10, bottom = 10 },
+        })
+        exportFrame:SetBackdropColor(0,0,0,1)
+        exportFrame:SetMovable(true)
+        exportFrame:EnableMouse(true)
+        exportFrame:RegisterForDrag("LeftButton")
+        exportFrame:SetScript("OnDragStart", exportFrame.StartMoving)
+        exportFrame:SetScript("OnDragStop", exportFrame.StopMovingOrSizing)
+
+        local title = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+        title:SetPoint("TOP", 0, -8)
+        title:SetText("Export Guild Names")
+
+        local close = CreateFrame("Button", nil, exportFrame, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", -6, -6)
+
+        local help = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        help:SetPoint("TOPLEFT", 16, -36)
+        help:SetText("Press Ctrl+C to copy. One name per line.")
+
+        local sf = CreateFrame("ScrollFrame", "GuildTools335_ExportScroll", exportFrame, "UIPanelScrollFrameTemplate")
+        sf:SetPoint("TOPLEFT", 16, -56)
+        sf:SetPoint("BOTTOMRIGHT", -16, 44)
+
+        local eb = CreateFrame("EditBox", "GuildTools335_ExportEditBox", sf)
+        eb:SetMultiLine(true)
+        eb:SetFontObject(ChatFontNormal)
+        eb:SetWidth(480)
+        eb:SetAutoFocus(false)
+        eb:EnableMouse(true)
+        eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        sf:SetScrollChild(eb)
+
+        local selectBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+        selectBtn:SetSize(120, 22)
+        selectBtn:SetPoint("BOTTOMLEFT", 16, 14)
+        selectBtn:SetText("Select All")
+        selectBtn:SetScript("OnClick", function()
+            GuildTools335_ExportEditBox:HighlightText()
+            GuildTools335_ExportEditBox:SetFocus()
+        end)
+
+        local closeBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+        closeBtn:SetSize(120, 22)
+        closeBtn:SetPoint("BOTTOMRIGHT", -16, 14)
+        closeBtn:SetText("Close")
+        closeBtn:SetScript("OnClick", function() exportFrame:Hide() end)
+    end
+
+    GuildTools335_ExportEditBox:SetText(text)
+    GuildTools335_ExportEditBox:HighlightText()
+    GuildTools335_ExportEditBox:SetFocus()
+    exportFrame:Show()
+end
