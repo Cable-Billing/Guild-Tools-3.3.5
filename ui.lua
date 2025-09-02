@@ -154,9 +154,14 @@ local function buildRoster()
         table.insert(sortedMains, { main = mainName, data = bucket })
     end
 
-    -- sort by most recent activity (fewest days first)
+    -- sort by most recent activity (fewest days first), then alphabetically by main name
     table.sort(sortedMains, function(a, b)
-        return (a.data.days or 9999) < (b.data.days or 9999)
+        local ad = a.data.days or 9999
+        local bd = b.data.days or 9999
+        if ad ~= bd then
+            return ad < bd
+        end
+        return string.lower(a.main) < string.lower(b.main)
     end)
 end
 
@@ -229,7 +234,14 @@ local function drawRoster()
 
             -- alts if expanded
             if not collapsed and data.alts and #data.alts > 0 then
-                table.sort(data.alts, function(a,b) return (a.days or 9999) < (b.days or 9999) end)
+                table.sort(data.alts, function(a,b)
+                    local ad = a.days or 9999
+                    local bd = b.days or 9999
+                    if ad ~= bd then
+                        return ad < bd
+                    end
+                    return string.lower(a.name) < string.lower(b.name)
+                end)
                 for _, alt in ipairs(data.alts) do
                     local afs = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                     afs:SetPoint("TOPLEFT", 34, y - 2)
