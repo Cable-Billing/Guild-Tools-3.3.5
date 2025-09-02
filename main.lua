@@ -21,7 +21,7 @@ initFrame:SetScript("OnEvent", function(self, event, addon)
         GuildTools_Config.uiCollapsed = GuildTools_Config.uiCollapsed or {} -- ui collapsed mains
 
         if IsInGuild() then GuildRoster() end
-        Print(("Loaded v%s. Type /gt for help."):format("0.4.0"))
+        Print(("Loaded v%s. Type /gt for help."):format("0.5.0"))
     end
 end)
 

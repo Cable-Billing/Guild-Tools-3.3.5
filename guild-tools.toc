@@ -2,7 +2,7 @@
 ## Title: Guild Tools 3.3.5
 ## Notes: Simple officer tools for managing mains/alts, kicks, promotions, and basic rules.
 ## Author: Arcana
-## Version: 0.4.0
+## Version: 0.5.0
 ## SavedVariables: GuildTools_Config
 
 main.lua

@@ -1,60 +1,105 @@
-GuildTools 3.3.5 (v0.2.0)
+Guild Tools 3.3.5 (v0.5.0)
 ===================================
+
+A lightweight officer toolkit for Wrath 3.3.5 guild management. Link alts to mains, view groups, promote/demote entire groups with rank rules, kick groups, add bulk notes, export/import alt links, and use a compact roster UI with search and pruning helpers.
 
 What it does
 ------------
-Command-based tools for officers on WoW 3.3.5 to:
-- Link alts to a main using an officer-note token `[MAIN:Name]`
-- Show a main+alts group
-- Kick a whole group (main + all alts)
-- Promote/Demote a whole group to a target rank index
-- Export groups to SavedVariables for offline processing
-- Revert your last promotegroup action (single-step undo)
-- Enforce an "alt rank rule" when promoting a main
-- Configure the "Established" and "Member" rank indices the addon uses for the rule
+- Link an alt to a main (stored internally by the addon)
+- Show a main + all linked alts
+- Promote/Demote an entire group with automatic alt-rank rules
+- Kick an entire group (main + all linked alts)
+- Bulk-add public/officer notes to a group or everyone (throttled)
+- Export/Import alt links via whispers for easy sharing
+- Compact roster UI: search, update, filter/prune by inactivity, export names
 
-New commands
+Requirements
 ------------
-/gt promotegroup <name> <rankIndex>   - promote/demote main and apply alt-rank rules
-/gt revertpromote                     - revert the last promotegroup (single-step undo)
-/gt setrank <Established|Member> <i>  - set the rank index for your guild roles
-/gt showranks                         - show currently configured rank indexes
+- WoW 3.3.5 (Interface 30300)
+- Officer permissions for actions that change ranks, notes, or remove members
 
-Alt rank rules (behaviour)
+Installation
+------------
+1) Copy the entire `Guild-Tools-3.3.5` folder (the one containing `guild-tools.toc`) into `World of Warcraft\Interface\AddOns\`.
+2) Launch the game and ensure "Guild Tools 3.3.5" is enabled on the character select AddOns screen.
+3) In-game, type `/gt help`.
+
+Getting started
+---------------
+1) Link alts to a main as you encounter them using `/gt link <alt> <main>`.
+2) Configure alt-rank rules once with `/gt setrank Established <i>` and `/gt setrank Member <i>`.
+3) Use `/gt promotegroup <name> <rankIndex>` to promote a main; alts follow the rule.
+4) Open the UI with `/gt ui` to browse/search mains and prune by inactivity.
+
+Slash commands
+--------------
+- `/gt link <alt> <main>`: Link an alt character to its main.
+- `/gt unlink <name>`: Remove a link for a character.
+- `/gt show <name>`: Print the group for a main or any of its alts.
+- `/gt kickgroup <name>`: Kick the main and all linked alts.
+- `/gt promotegroup <name> <rankIndex>`: Promote/Demote the main to the target rank; alts are set according to the rule below.
+- `/gt setrank <Established|Member> <index>`: Configure the two rank indices the rule uses.
+- `/gt showranks`: Show the currently configured indices.
+- `/gt addnote <Officer|Public> <name|all> <note>`: Queue note additions for a group or the entire roster.
+- `/gt export <character>`: Whisper-export all alt links to the named character (for import on their side).
+- `/gt ui`: Open the compact roster UI (search, update, filter/prune, export names).
+
+Alt-rank rules (behaviour)
 --------------------------
-- You must set the rank indexes the addon uses before relying on the rule:
-  /gt setrank Established <index>
-  /gt setrank Member <index>
+Set the indices that match your guild ranks first:
+```
+/gt setrank Established <index>
+/gt setrank Member <index>
+```
+When you run `/gt promotegroup <main> <rankIndex>`:
+- If the main is promoted above Established (lower number), alts are set to Established.
+- If the main is set to Established, alts are set to Member.
+- If the main is set to Member, alts are set to Member.
+- If rules are not configured, alts default to matching the main where possible.
 
-- Logic implemented:
-  * If main is promoted ABOVE (numerically smaller) than Established -> alts are set to Established.
-  * If main is promoted TO Established -> alts are set to Member.
-  * If main is promoted TO Member -> alts are set to Member.
-  * If rank rules are not set, the addon falls back to matching the main's rank for alts and prints a reminder.
+UI module
+---------
+- Open with `/gt ui`.
+- Search box: find by main or alt; expands and highlights the result.
+- Update Roster: refreshes in-game guild data and rebuilds the view.
+- Prune/Filter: show only members inactive for ≥ N days; persists per-session.
+- Kick Filtered: after a confirmation dialog, removes all members matching the filter.
+- Export Names: opens a copy window with names based on the current filter.
 
-Revert behaviour
-----------------
-- Revert stores the previous ranks of the group when you run /gt promotegroup and allows a single undo via /gt revertpromote.
-- Only the last promotegroup is kept (no history).
-
-Install
--------
-1) Unzip the `GuildTools335_v0.2` folder into `Interface\AddOns\`.
-2) Restart the client or `/reload`.
-3) Type `/gt` in chat for help.
+Export/Import alt links
+-----------------------
+- Export: `/gt export <character>` sends one or more whisper messages beginning with `GT_EXPORT ...`.
+- Import: Clients with the addon automatically consume incoming `GT_EXPORT ...` whispers and merge links.
+- The import reports how many links were new/updated and the new total.
 
 Notes & limitations
 -------------------
-- You must be an officer with promote/demote and officer-note edit permissions for most actions to work.
-- Promotions/demotions are done by looping GuildPromote/GuildDemote until the desired rank is reached (3.3.5 API limitation).
-- Revert will only work if the group members still exist in the guild roster (and you still have permissions).
+- You must have appropriate officer permissions to link/unlink, change ranks, add notes, or kick.
+- Rank changes loop `GuildPromote`/`GuildDemote` until the desired index (3.3.5 API behaviour).
+- Group actions require the members to exist in the current roster cache (online status can affect immediacy).
+- Kicking and promotions are powerful; always double-check targets and configured rank indices before running.
 
-Testing checklist (in-game)
----------------------------
-1) Ensure you have officer permissions (promote/demote and edit officer notes).
-2) Set rank rules, e.g. `/gt setrank Established 3` and `/gt setrank Member 4`.
-3) Run `/gt show <main>` to verify the group composition.
-4) Run `/gt promotegroup <main> <index>` (choose a rank to test the three cases: above Established, equal to Established, equal to Member).
-5) Observe chat messages for what ranks the main and alts were set to.
-6) Run `/gt revertpromote` to verify all saved ranks are restored.
-7) If something doesn't work, collect the output messages and tell me the exact sequence so I can adjust the code.
+Examples
+--------
+```
+/gt link Altchar Mainchar
+/gt show Mainchar
+/gt setrank Established 3
+/gt setrank Member 4
+/gt promotegroup Mainchar 2
+/gt addnote Officer Mainchar "Trial of Mainchar"
+/gt export GuildLeader
+/gt ui
+```
+
+Troubleshooting
+---------------
+- Unknown command: type `/gt help` to see all commands.
+- Not in a guild / insufficient permissions: ensure you are on an officer character with promote/demote and note permissions.
+- Members not found or offline: open the guild roster, click Update Roster in the UI, or wait for the roster to refresh, then try again.
+
+Version
+-------
+- AddOn Title: Guild Tools 3.3.5
+- Interface: 30300
+- Version: 0.5.0
